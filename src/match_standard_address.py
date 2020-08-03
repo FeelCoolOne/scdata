@@ -1,56 +1,53 @@
-STANDARD_ADDRESS_LIB_PATH = 'data/位置信息识别-复赛数据/复赛标准地址库.csv'
+
+from util import load_standard_address, build_reversed_index, segment_address
+
 ADDRESS_LIB = None
 
 
-def load_addresses():
-    addresses = list()
-    fieldSeparator, lineSeparator = '\t', '\n'
-    with open(STANDARD_ADDRESS_LIB_PATH, 'r', encoding='utf-8') as f:
-        fieldNames = f.readline().rstrip(lineSeparator).split(fieldSeparator)
-        for line in f:
-            fieldValues = line.rstrip(lineSeparator).split(fieldSeparator)
-            addressItem = dict(zip(fieldNames, fieldValues))
-            addresses.append(addressItem)
-    return addresses
-
-
-def get_subAddress(feilds):
-    subAddress = list(map(lambda x: x['street']+x['street_num'], ADDRESS_LIB))
-    return subAddress
-
-
-def match_street_plus_streetNum(addressTxt, candidates):
-    matchedSubStdAddress = list(filter(
-        lambda x: x[1] in addressTxt and len(x[1]),
-        enumerate(candidates)))
-    if len(matchedSubStdAddress) == 0:
-        return None
-    if len(matchedSubStdAddress) == 1:
-        return matchedSubStdAddress[0][0]
-    maxLen = max(map(lambda x: len(x[1]), matchedSubStdAddress))
-    candidates = list(filter(lambda x: maxLen == x[1], matchedSubStdAddress))
-    if len(candidates) == 1:
-        return candidates[0][0]
-    stdIdAddressTxts = list(map(lambda m: (m[0], addressTxt.replace(m[1], '')),
-                                candidates))
+def match_street_plus_streetNum(stdIdAddressTxts):
+    candidateStdAddresses = map(lambda x: (
+        ADDRESS_LIB[x[0]]['street'] + ADDRESS_LIB[x[0]]['street_num']),
+        stdIdAddressTxts)
+    idTxtCandts = map(lambda x, y: (x[0], x[1], y),
+                      stdIdAddressTxts, candidateStdAddresses)
+    matchedIdTxtCandts = list(filter(
+        lambda x: x[2] in x[1] and len(x[2]), idTxtCandts))
+    if len(matchedIdTxtCandts) == 0:
+        return None  # street+street_num not in txt
+    if len(matchedIdTxtCandts) == 1:
+        return matchedIdTxtCandts[0][0]
+    maxLen = max(map(lambda x: len(x[2]), matchedIdTxtCandts))
+    maxLenIdTxtCandts = list(filter(lambda x: maxLen == len(x[2]),
+                                    matchedIdTxtCandts))
+    if len(maxLenIdTxtCandts) == 1:
+        return maxLenIdTxtCandts[0][0]
+    stdIdAddressTxts = map(lambda m: (m[0], m[1].replace(m[2], '')),
+                           maxLenIdTxtCandts)
+    stdIdAddressTxts = list(filter(lambda x: len(x[1]), stdIdAddressTxts))
+    if len(stdIdAddressTxts) == 0:
+        return -1  # multiple max length street+street_num in txt
     # TODO: check order of match field.
     priorityMatchField = ['township', 'district', 'city', 'province']
     return match_addition_field(priorityMatchField, stdIdAddressTxts)
 
 
 def match_addition_field(fields, stdIdAddressTxts):
-    candidateStdAddresses = map(lambda x: ADDRESS_LIB[x[0]], stdIdAddressTxts)
+    candidateStdAddresses = list(map(lambda x: ADDRESS_LIB[x[0]], stdIdAddressTxts))
     addressTxts = stdIdAddressTxts
-    for field in fields:
-        subCandidates = filter(lambda a, c: c[field] in a[1],
-                               zip(addressTxts, candidateStdAddresses))
+    for idx, field in enumerate(fields):
+        # TODO: postfix(city, province, township et al.)
+        subCandidates = list(filter(lambda x: x[1][field] in x[0][1],
+                                    zip(addressTxts, candidateStdAddresses)))
         if len(subCandidates) == 0:
             continue
         if len(subCandidates) == 1:
-            return subCandidates[0][0]
+            return subCandidates[0][0][0]
         assert len(subCandidates) > 1, "ValueError"
         addressTxts = map(lambda x: (x[0][0], x[0].replace(x[1][field], '')),
                           subCandidates)
+        addressTxts = list(filter(lambda x: len(x[1]), addressTxts))
+        if len(addressTxts) == 0:
+            return -(idx+2)
         candidateStdAddresses = map(lambda x: ADDRESS_LIB[x[0][0]], subCandidates)
 
     raise ValueError('multiple sample in lib: {}'.format(stdIdAddressTxts))
@@ -60,53 +57,72 @@ def match_different_num(addressTxt, candidatesIdxs):
     pass
 
 
+def search_candidate_stdAddress(segmentedAddressTxts, reversedIndex):
+    candidateStdAdresses = dict()
+    # TODO: check negative impact for ignore street_num.
+    # ! default order may not be obey by sample.
+    priorityFields = ['street', 'township', 'district', 'city', 'province']
+    for index, segmentedAddressTxt in segmentedAddressTxts.items():
+        candidates = set()
+        for field in priorityFields:
+            # TODO: check null string.
+            fieldRelatedIndex = reversedIndex[field]
+            tmpCandidate = set()
+            for word in segmentedAddressTxt:
+                tmpCandidate = tmpCandidate.union(fieldRelatedIndex.get(word, set()))
+            if not tmpCandidate:
+                continue
+            if len(candidates):
+                candidates = candidates.intersection(tmpCandidate)
+            else:
+                candidates = tmpCandidate
+        candidateStdAdresses[index] = candidates
+    return candidateStdAdresses
+
+
 def match():
-    extractedAddressPath = '../data/extracted_address_text_0727.txt'
+    extractedAddressPath = 'data/extracted_address_text_0727.txt'
     STREET_NUM_PAT = r'[\d\-之a-z][号栋座]'
-    streetStreetNumAddress = get_subAddress(['street', 'street_num'])
     notSSNNum = 0
+    addressTxts = dict()
     with open(extractedAddressPath, 'r', encoding='utf-8') as f:
         for line in f:
             index, addressTxt = line.rstrip().split('-->')
-            # [street+street_num] in addressTxt
-            matchedSubStdAddress = list(filter(
-                lambda x: x[1] in addressTxt and len(x[1]),
-                enumerate(streetStreetNumAddress)))
-            finalMatched = len(matchedSubStdAddress) == 1
-            # match with max length common substring.
-            if not finalMatched and len(matchedSubStdAddress):
-                counter = dict()
-                for addressIdx, subAddress in matchedSubStdAddress:
-                    if len(subAddress) not in counter:
-                        counter[len(subAddress)] = []
-                    counter[len(subAddress)].append((addressIdx, subAddress))
-                maxLen = max(counter.keys())
-                maxLenComStringCandidate = counter[maxLen]
-                finalMatched = len(maxLenComStringCandidate) == 1
-                addressTxts = map(lambda x: (x[0], addressTxt.replace(x[1], '')),
-                                  maxLenComStringCandidate)
+            assert index not in addressTxts, '{}'.format(index)
+            addressTxts[index] = addressTxt
 
-            # match with additional text in addressTxt if avaiable candidates
-            if not finalMatched and len(matchedSubStdAddress):
-                extendCandidates = filter(lambda x: x[1] < len(addressTxt),
-                                          matchedSubStdAddress)
-                addressTxtAndCandidateIdxs = map(
-                    lambda x: (x[0], addressTxt.replace(x[1], '')),
-                    extendCandidates)
-                priorityMatchField = ['township', 'district', 'city', 'province']
-                tmpMatchedSubStdAddress = match_addition_field(
-                    priorityMatchField, addressTxtAndCandidateIdxs)
-                finalMatched = len(tmpMatchedSubStdAddress) == 1
-            # need more info from html
-            subStdAddressAbnomal = filter(lambda x: x[1] == len(addressTxt), matchedSubStdAddress)
-            if finalMatched:
-                continue
-            notSSNNum += 1
-            if len(matchedSubStdAddress):
-                print(matchedSubStdAddress)
-                print(addressTxt)
-    print(notSSNNum)
+    reversedIndex = build_reversed_index(ADDRESS_LIB)
+    segmentedAddressTxts = segment_address(addressTxts.values(),
+                                           reversedIndex)
+    segmentedAddressTxts = map(lambda x: list(filter(lambda y: len(y) > 1, x)),
+                               segmentedAddressTxts)
+    segmentedAddressTxts = dict(zip(addressTxts.keys(), segmentedAddressTxts))
+    candidateStdAddressIndexs = search_candidate_stdAddress(
+        segmentedAddressTxts, reversedIndex)
+    candidateStdAddress = map(lambda idxs: list(map(lambda i: ADDRESS_LIB[i], idxs)),
+                              candidateStdAddressIndexs.values())
+    candidateStdAddress = dict(zip(candidateStdAddressIndexs.keys(),
+                                   candidateStdAddress))
+
+    # stdIdAddressTxts = list(enumerate([
+    #     addressTxt for _ in range(len(ADDRESS_LIB))]))
+    # matchedStandardAddressId = match_street_plus_streetNum(
+    #     stdIdAddressTxts)
+    # if matchedStandardAddressId and matchedStandardAddressId >= 0:
+    #     print(index, addressTxt, ADDRESS_LIB[matchedStandardAddressId])
+    #     continue
+    # if matchedStandardAddressId is None:
+    #     # no street+street_num match, variant for street_num
+    #     pass
+    # notSSNNum += 1
+    # print(notSSNNum)
 
 
 def main():
-    ADDRESS_LIB = load_addresses()
+    global ADDRESS_LIB
+    ADDRESS_LIB = load_standard_address()
+    match()
+
+
+if __name__ == '__main__':
+    main()

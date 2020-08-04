@@ -22,6 +22,8 @@ def build_reversed_index(addresses):
     for index, address in enumerate(addresses):
         for field in fieldNames:
             assert field in address, '%s not in %s' % (field, address)
+            if not address[field].strip():
+                continue
             if address[field] not in reIndex[field]:
                 reIndex[field][address[field]] = set()
             reIndex[field][address[field]].add(index)

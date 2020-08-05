@@ -121,7 +121,8 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
     return list(map(lambda x: candidateStdAddress[x], matchedIdxs))
 
 
-def search_candidate_stdAddress(segmentedAddressTxts, reversedIndex):
+def search_candidate_stdAddress(segmentedAddressTxts, reversedIndex,
+                                fieldUnion=False):
     candidateStdAdresses = dict()
     # TODO: check negative impact for ignore street_num.
     # ! default order may not be obey by sample.
@@ -135,8 +136,11 @@ def search_candidate_stdAddress(segmentedAddressTxts, reversedIndex):
                 tmpCandidate = tmpCandidate.union(fieldRelatedIndex.get(word, set()))
             if not tmpCandidate:
                 continue
-            candidates = candidates.intersection(tmpCandidate) if len(
-                candidates) else tmpCandidate
+            if fieldUnion:
+                candidates = candidates.union(tmpCandidate)
+            else:
+                candidates = candidates.intersection(tmpCandidate) if len(
+                    candidates) else tmpCandidate
             if not candidates:
                 break
         candidateStdAdresses[index] = candidates
@@ -183,11 +187,12 @@ def match():
                                                           candidates)
             if len(matchedStdAddress):
                 finalStdAddress[index] = matchedStdAddress
-            # print(index, addressTxts[index], matchedStdAddress)
+            for stdAddr in matchedStdAddress:
+                print("{},{}".format(index, '\t'.join(stdAddr.values())))
             pass
         elif isinstance(matchedStdAddress, list):
             # TODO: more info for match.
-            print(index, addressTxts[index], matchedStdAddress)
+            # print(index, addressTxts[index], matchedStdAddress)
             c += 1
             pass
         elif isinstance(matchedStdAddress, dict):

@@ -59,36 +59,70 @@ def match_addition_field(fields, idAddressTxts, candidateStdAddress):
 def filter_nearby_streetNum(streetNumTxt, streetNums):
     streetNumTxtValues = list(filter(len, re.split(r'[^\d]', streetNumTxt)))
     if not len(streetNumTxtValues):
-        matchedIdx, _ = filter_nearby_street_NonNum(streetNumTxt, streetNums)
-        return matchedIdx, list(map(lambda x: streetNums[x], matchedIdx))
+        matchedIdxs, _ = filter_nearby_street_NonNum(streetNumTxt, streetNums)
+        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
 
     idxStreetNumValues = list(map(
         lambda sn: (sn[0], list(filter(len, re.split(r'[^\d]', sn[1])))),
         enumerate(streetNums)))
-    idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]),
-                                        idxStreetNumValues))
+    idxStreetNumValuesTMP = list(filter(
+        lambda x: len(x[1]) > 0, idxStreetNumValues))
+    assert len(idxStreetNumValuesTMP) > 1, '{} {}'.format(streetNumTxt, streetNums)
+
+    streetNumFlag = int(streetNumTxtValues[0]) % 2
+    idxStreetNumValuesTMP = list(filter(
+        lambda x: int(x[1][0]) % 2 == streetNumFlag,
+        idxStreetNumValuesTMP))
+    if len(idxStreetNumValuesTMP) == 0:
+        # TODO: not same flag street_num.
+        idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]), idxStreetNumValues))
+
     for idx, num in enumerate(streetNumTxtValues):
         num = int(num)
-        matchedNumIdx, minDistance = list(), 10**6
-        # TODO: check the impact (1&9 - 1&1 > 1&9 - 1)
-        distances = map(lambda x: (x[0], abs(int(x[1][idx]) - num)) if len(
+        # TODO: txt(1-3) candidate(1, 1),candidate(1-5, 1-5) 
+        # TODO: txt(1) candidate(3-3, 3-3, 3)
+        distances = list(map(lambda x: (x[0], abs(int(x[1][idx]) - num)) if len(
                             x[1]) >= idx+1 else (x[0], 10**5),
-                        idxStreetNumValuesTMP)
+                        idxStreetNumValuesTMP))
+        minDis, matchedIdxs = min(map(lambda x: x[1], distances)), list()
         for i, dis in distances:
-            if dis < minDistance:
-                minDistance = dis
-                matchedNumIdx = [i]
-            elif dis == minDistance:
-                matchedNumIdx.append(i)
-            else:
+            if dis > minDis:
                 continue
-        assert len(matchedNumIdx) >= 1
-        if len(matchedNumIdx) >= 2:
-            idxStreetNumValuesTMP = list(map(lambda x: idxStreetNumValues[x],
-                                             matchedNumIdx))
+            matchedIdxs.append(i)
+        if len(matchedIdxs) == 1:
+            return matchedIdxs, [streetNums[matchedIdxs[0]]]
+        idxStreetNumValuesTMP = list(map(lambda x: idxStreetNumValues[x],
+                                         matchedIdxs))
+
+    numMap = dict()
+    lastPos = min([idx, len(idxStreetNumValues[matchedIdxs[0]][1])-1])
+    for idx in matchedIdxs:
+        lastValue = idxStreetNumValues[idx][1][lastPos]
+        if lastValue not in numMap:
+            numMap[lastValue] = [idx]
+        else:
+            numMap[lastValue].append(idx)
+    matchedIdxs = []
+    for _, idxs in numMap.items():
+        if len(idxs) == 1:
+            matchedIdxs.append(idxs[0])
             continue
-        return matchedNumIdx, [streetNums[matchedNumIdx[0]]]
-    return matchedNumIdx, list(map(lambda x: streetNums[x], matchedNumIdx))
+        minValue, minLen = 10**4, len(streetNumTxtValues)
+        minValueIndex = []
+        for idx in idxs:
+            if len(idxStreetNumValues[idx][1]) <= minLen:
+                matchedIdxs.append(idx)
+                continue
+            # assert int(idxStreetNumValues[idx][1][lastPos+1]) != minValue
+            if int(idxStreetNumValues[idx][1][lastPos+1]) > minValue:
+                continue
+            if int(idxStreetNumValues[idx][1][lastPos+1]) == minValue:
+                minValueIndex.append(idx)
+            else:
+                minValueIndex, minValue = [idx], int(idxStreetNumValues[idx][1][lastPos+1])
+        if minValueIndex:
+            matchedIdxs.extend(minValueIndex)
+    return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
 
 
 def filter_nearby_street_NonNum(addressTxt, streetNonNums):
@@ -188,7 +222,7 @@ def match():
             if len(matchedStdAddress):
                 finalStdAddress[index] = matchedStdAddress
             for stdAddr in matchedStdAddress:
-                print("{},{}".format(index, '\t'.join(stdAddr.values())))
+                print("{}.html,{}".format(index, '$'.join(stdAddr.values())))
             pass
         elif isinstance(matchedStdAddress, list):
             # TODO: more info for match.

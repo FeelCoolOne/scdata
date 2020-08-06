@@ -125,6 +125,14 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
     return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
 
 
+def post_calculate_nearby_street(stdAddresses):
+    keys = map(lambda x: re.search(r'\d+', x[1]['street_num']),
+               stdAddresses)
+    match = sorted(zip(stdAddresses, keys),
+                   key=lambda x: int(x[1][0]) if x[1] is not None else 10**7)[0][0]
+    return [match[0]], [match[1]]
+
+
 def filter_nearby_street_NonNum(addressTxt, streetNonNums):
     matchedIdx, minDistance = list(), 10**6
     for idx, streetTxt in enumerate(streetNonNums):
@@ -152,6 +160,9 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
     else:
         streetNumTxt = streetNumTxt[0]
         matchedIdxs, _ = filter_nearby_streetNum(streetNumTxt, streetNumCandts)
+    if len(matchedIdxs) > 1:
+        matchedIdxs, _ = post_calculate_nearby_street(list(map(
+            lambda x: (x, candidateStdAddress[x]), matchedIdxs)))
     return list(map(lambda x: candidateStdAddress[x], matchedIdxs))
 
 
@@ -219,6 +230,7 @@ def match():
             b += 1
             matchedStdAddress = match_approximate_address(addressTxts[index],
                                                           candidates)
+
             if len(matchedStdAddress):
                 finalStdAddress[index] = matchedStdAddress
             for stdAddr in matchedStdAddress:

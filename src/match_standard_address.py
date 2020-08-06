@@ -76,52 +76,62 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
     if len(idxStreetNumValuesTMP) == 0:
         # TODO: not same flag street_num.
         idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]), idxStreetNumValues))
-
+    # 3#  --> 3#1 3#4
+    # 3#1#2  --> 3#1 3#1#7
+    # 3#1#2  --> 3#1 3#1
+    # 3#1#2 --> 1#
+    # 3#3 --> 3#2 3#4
+    # 3# --> 5# 1#
     for idx, num in enumerate(streetNumTxtValues):
-        num = int(num)
-        # TODO: txt(1-3) candidate(1, 1),candidate(1-5, 1-5) 
-        # TODO: txt(1) candidate(3-3, 3-3, 3)
-        distances = list(map(lambda x: (x[0], abs(int(x[1][idx]) - num)) if len(
-                            x[1]) >= idx+1 else (x[0], 10**5),
-                        idxStreetNumValuesTMP))
-        minDis, matchedIdxs = min(map(lambda x: x[1], distances)), list()
-        for i, dis in distances:
-            if dis > minDis:
-                continue
-            matchedIdxs.append(i)
-        if len(matchedIdxs) == 1:
-            return matchedIdxs, [streetNums[matchedIdxs[0]]]
-        idxStreetNumValuesTMP = list(map(lambda x: idxStreetNumValues[x],
-                                         matchedIdxs))
+        tmp = list(filter(lambda x: len(x[1]) > idx and x[1][idx] == num,
+                          idxStreetNumValuesTMP))
+        if not tmp:
+            break
+        idxStreetNumValuesTMP = tmp
+    minLen = min(map(lambda x: len(x[1]), idxStreetNumValuesTMP))
+    if minLen > len(streetNumTxtValues):
+        matchedIdxs = list(map(lambda x: x[0], idxStreetNumValuesTMP))
+        # 3# --> 3#1 3#9
+        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
 
-    numMap = dict()
-    lastPos = min([idx, len(idxStreetNumValues[matchedIdxs[0]][1])-1])
-    for idx in matchedIdxs:
-        lastValue = idxStreetNumValues[idx][1][lastPos]
-        if lastValue not in numMap:
-            numMap[lastValue] = [idx]
-        else:
-            numMap[lastValue].append(idx)
-    matchedIdxs = []
-    for _, idxs in numMap.items():
-        if len(idxs) == 1:
-            matchedIdxs.append(idxs[0])
+    indicator = max(minLen-1, idx)
+    tmp = 2 if indicator == 0 else 1
+    neighborNums = [int(num)+tmp, int(num)-tmp]
+    neighbors, parents = set(), set()
+    for idxTMP, numTMP in idxStreetNumValuesTMP:
+        if len(numTMP) > indicator and int(numTMP[idx]) not in neighborNums:
             continue
-        minValue, minLen = 10**4, len(streetNumTxtValues)
-        minValueIndex = []
-        for idx in idxs:
-            if len(idxStreetNumValues[idx][1]) <= minLen:
-                matchedIdxs.append(idx)
-                continue
-            # assert int(idxStreetNumValues[idx][1][lastPos+1]) != minValue
-            if int(idxStreetNumValues[idx][1][lastPos+1]) > minValue:
-                continue
-            if int(idxStreetNumValues[idx][1][lastPos+1]) == minValue:
-                minValueIndex.append(idx)
-            else:
-                minValueIndex, minValue = [idx], int(idxStreetNumValues[idx][1][lastPos+1])
-        if minValueIndex:
-            matchedIdxs.extend(minValueIndex)
+        if len(numTMP) <= indicator:
+            parents.add(idxTMP)
+            continue
+        neighbors.add(idxTMP)
+    if len(neighbors):
+        matchedIdxs = neighbors
+        # 3#3 --> 3#2 3#4
+        # 1# --> 3# 5#
+        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+
+    idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]) > indicator,
+                                        idxStreetNumValuesTMP))
+    if not idxStreetNumValuesTMP:
+        matchedIdxs = parents
+        # 3#3 --> 3#
+        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+    # 3#3 --> [3#] 3#5 3#1
+    # 3#
+    tmp = list(filter(lambda x: len(x[1]) <= indicator, idxStreetNumValuesTMP))
+    matchedIdxs = list(map(lambda x: x[0], tmp))
+    downPoint, upPoint = None, None
+    diffs = list(map(lambda x: (x[0], int(x[1][1][indicator]) - int(num)),
+                     enumerate(idxStreetNumValuesTMP)))
+    upDiffs = list(filter(lambda x: x[1] > 0, diffs))
+    downDiffs = list(filter(lambda x: x[1] < 0, diffs))
+    upValue = min(upDiffs, key=lambda x: x[1]) if upDiffs else 10000
+    downValue = max(downDiffs, key=lambda x: x[1]) if downDiffs else -10000
+    for i, diff in diffs:
+        if diff not in [upValue, downValue]:
+            continue
+        matchedIdxs.append(idxStreetNumValuesTMP[i][0])
     return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
 
 

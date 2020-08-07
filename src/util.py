@@ -27,6 +27,10 @@ def build_reversed_index(addresses):
             if address[field] not in reIndex[field]:
                 reIndex[field][address[field]] = set()
             reIndex[field][address[field]].add(index)
+            if field in ['province', 'city']:
+                if address[field][:-1] not in reIndex[field]:
+                    reIndex[field][address[field][:-1]] = set()
+                reIndex[field][address[field][:-1]].add(index)
     return reIndex
 
 

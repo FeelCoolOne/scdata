@@ -67,8 +67,13 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
         enumerate(streetNums)))
     idxStreetNumValuesTMP = list(filter(
         lambda x: len(x[1]) > 0, idxStreetNumValues))
-    assert len(idxStreetNumValuesTMP) > 1, '{} {}'.format(streetNumTxt, streetNums)
+    sameNumValues = list(filter(lambda x: x[1] == streetNumTxtValues,
+                                idxStreetNumValuesTMP))
+    if len(sameNumValues):
+        matchedIdxs = list(map(lambda x: x[0], sameNumValues))
+        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
 
+    assert len(idxStreetNumValuesTMP) > 1, '{} {}'.format(streetNumTxt, streetNums)
     streetNumFlag = int(streetNumTxtValues[0]) % 2
     idxStreetNumValuesTMP = list(filter(
         lambda x: int(x[1][0]) % 2 == streetNumFlag,
@@ -89,7 +94,7 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
             break
         idxStreetNumValuesTMP = tmp
     minLen = min(map(lambda x: len(x[1]), idxStreetNumValuesTMP))
-    if minLen > len(streetNumTxtValues):
+    if minLen > len(streetNumTxtValues) or len(idxStreetNumValuesTMP) == 1:
         matchedIdxs = list(map(lambda x: x[0], idxStreetNumValuesTMP))
         # 3# --> 3#1 3#9
         return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
@@ -126,8 +131,8 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
                      enumerate(idxStreetNumValuesTMP)))
     upDiffs = list(filter(lambda x: x[1] > 0, diffs))
     downDiffs = list(filter(lambda x: x[1] < 0, diffs))
-    upValue = min(upDiffs, key=lambda x: x[1]) if upDiffs else 10000
-    downValue = max(downDiffs, key=lambda x: x[1]) if downDiffs else -10000
+    upValue = min(upDiffs, key=lambda x: x[1])[1] if upDiffs else 10000
+    downValue = max(downDiffs, key=lambda x: x[1])[1] if downDiffs else -10000
     for i, diff in diffs:
         if diff not in [upValue, downValue]:
             continue
@@ -203,12 +208,13 @@ def search_candidate_stdAddress(segmentedAddressTxts, reversedIndex,
 
 
 def match():
-    extractedAddressPath = 'data/extracted_address_text_0727.txt'
+    extractedAddressPath = 'data/extracted_address_text_0806.txt'
     notSSNNum = 0
     addressTxts = dict()
     with open(extractedAddressPath, 'r', encoding='utf-8') as f:
         for line in f:
             index, addressTxt = line.rstrip().split('-->')
+            addressTxt = addressTxt.replace('$', '')
             assert index not in addressTxts, '{}'.format(index)
             addressTxt = addressTxt.strip()
             if not addressTxt:
@@ -228,7 +234,8 @@ def match():
     candidateStdAddress = dict(zip(candidateStdAddressIndexs.keys(),
                                    candidateStdAddress))
     finalStdAddress = dict()
-    a, b, c = 0, 0, 0
+    a, b, c, d, e = 0, 0, 0, 0, 0
+    f = 0
     for index, candidates in candidateStdAddress.items():
         if len(candidates) == 0:
             # TODO: 1. no candidates
@@ -238,13 +245,17 @@ def match():
         if matchedStdAddress is None:
             # TODO: no match at street+street_num
             b += 1
-            matchedStdAddress = match_approximate_address(addressTxts[index],
-                                                          candidates)
-
+            try:
+                matchedStdAddress = match_approximate_address(addressTxts[index],
+                                                              candidates)
+            except Exception as u:
+                print(index, u)
+                continue
             if len(matchedStdAddress):
                 finalStdAddress[index] = matchedStdAddress
             for stdAddr in matchedStdAddress:
                 print("{}.html,{}".format(index, '$'.join(stdAddr.values())))
+                f += 1
             pass
         elif isinstance(matchedStdAddress, list):
             # TODO: more info for match.
@@ -254,7 +265,12 @@ def match():
         elif isinstance(matchedStdAddress, dict):
             assert index not in finalStdAddress
             finalStdAddress[index] = matchedStdAddress
-    print(a, b, c)
+            d += 1
+            # print("{}.html,{}".format(index, '$'.join(matchedStdAddress.values())))
+        else:
+            e += 1
+
+    print(a, b, c, d, e, f)
 
 
 def main():

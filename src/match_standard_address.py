@@ -1,5 +1,6 @@
 # encoding=utf-8
 import re
+import json
 
 from util import load_standard_address, build_reversed_index, segment_address
 
@@ -12,7 +13,7 @@ def standard_match(addressTxt, candidateStdAddress):
     idSSCandts = map(lambda x: (x[0], x[1]['street']+x[1]['street_num']),
                      enumerate(candidateStdAddress))
     matchedIdSSCandts = list(filter(
-        lambda x: x[1] in addressTxt and len(x[1]), idSSCandts))
+        lambda x: x[1] == addressTxt and len(x[1]), idSSCandts))
     if len(matchedIdSSCandts) == 0:
         return None  # street+street_num not in txt
     if len(matchedIdSSCandts) == 1:
@@ -147,11 +148,7 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
 
 
 def post_calculate_nearby_street(stdAddresses):
-    global REVERSED_INDEX
-    # keys = map(lambda x: re.search(r'\d+', x[1]['street_num']),
-    #            stdAddresses)
-    # match = sorted(zip(stdAddresses, keys),
-    #                key=lambda x: int(x[1][0]) if x[1] is not None else 10**7)[0][0]
+
     feildNames = ['province', 'city', 'district', 'township', 'street']
     filterFeildValues = list(map(lambda x: (x, stdAddresses[0][1][x]), feildNames))
     numIndexs = set()
@@ -161,7 +158,7 @@ def post_calculate_nearby_street(stdAddresses):
             numIndexs = fieldSet
             continue
         numIndexs = numIndexs.intersection(fieldSet)
-    assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
+    # assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
     candtsAddress = list(map(lambda x: x[1], stdAddresses))
     otherNumIndexs = list(filter(lambda i: ADDRESS_LIB[i] not in candtsAddress,
                                  numIndexs))
@@ -200,13 +197,13 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
         return candidateStdAddress
     streetNumCandts = list(map(lambda x: x['street_num'],
                                candidateStdAddress))
-    STREET_NUM_EXPR = r'[\d\-之附a-z#]+[号栋座店#][\d]*'
-    streetNumTxt = re.search(STREET_NUM_EXPR, addressTxt)
-    if streetNumTxt is None:
-        matchedIdxs, _ = filter_nearby_street_NonNum(addressTxt,
+    STREET_NUM_EXPR = r'[\d\-之附a-z#]+[号栋座店#]?[\d]*'
+    streetNumTxt = addressTxt['street_num']
+    notHasNum = re.search(STREET_NUM_EXPR, streetNumTxt) is None
+    if notHasNum:
+        matchedIdxs, _ = filter_nearby_street_NonNum(streetNumTxt,
                                                      streetNumCandts)
     else:
-        streetNumTxt = streetNumTxt[0]
         matchedIdxs, _ = filter_nearby_streetNum(streetNumTxt, streetNumCandts)
     if len(matchedIdxs) > 1:
         matchedIdxs, _ = post_calculate_nearby_street(list(map(
@@ -214,26 +211,25 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
     return list(map(lambda x: candidateStdAddress[x], matchedIdxs))
 
 
-def search_candidate_stdAddress(segmentedAddressTxts, fieldUnion=False):
+def search_candidate_stdAddress(addresses, fieldUnion=False):
     global REVERSED_INDEX
     candidateStdAdresses = dict()
     # TODO: check negative impact for ignore street_num.
     # ! default order may not be obey by sample.
     priorityFields = ['street', 'township', 'district', 'city', 'province']
-    for index, segmentedAddressTxt in segmentedAddressTxts.items():
+    for index, address in addresses.items():
         candidates = set()
         for field in priorityFields:
             fieldRelatedIndex = REVERSED_INDEX[field]
-            tmpCandidate = set()
-            for word in segmentedAddressTxt:
-                tmpCandidate = tmpCandidate.union(fieldRelatedIndex.get(word, set()))
-            if not tmpCandidate:
+            fieldValue = address.get(field, None)
+            if not fieldValue:
                 continue
+            fieldCandidates = fieldRelatedIndex[fieldValue]
             if fieldUnion:
-                candidates = candidates.union(tmpCandidate)
+                candidates = candidates.union(fieldCandidates)
             else:
-                candidates = candidates.intersection(tmpCandidate) if len(
-                    candidates) else tmpCandidate
+                candidates = candidates.intersection(fieldCandidates) if len(
+                    candidates) else fieldCandidates
             if not candidates:
                 break
         candidateStdAdresses[index] = candidates
@@ -241,26 +237,20 @@ def search_candidate_stdAddress(segmentedAddressTxts, fieldUnion=False):
 
 
 def match():
-    extractedAddressPath = 'data/extracted_address_text_0806.txt'
+    extractedAddressPath = 'data/extracted_formated_address_0810.txt'
     notSSNNum = 0
     addressTxts = dict()
     with open(extractedAddressPath, 'r', encoding='utf-8') as f:
         for line in f:
             index, addressTxt = line.rstrip().split('-->')
-            addressTxt = addressTxt.replace('$', '')
+            addressTxt = eval(addressTxt)
             assert index not in addressTxts, '{}'.format(index)
-            addressTxt = addressTxt.strip()
             if not addressTxt:
-                continue
+                raise Exception('{} {}'.format(index, addressTxt))
             addressTxts[index] = addressTxt
 
-    segmentedAddressTxts = segment_address(addressTxts.values(),
-                                           REVERSED_INDEX)
-    segmentedAddressTxts = map(lambda x: list(filter(lambda y: len(y) > 1, x)),
-                               segmentedAddressTxts)
-    segmentedAddressTxts = dict(zip(addressTxts.keys(), segmentedAddressTxts))
     candidateStdAddressIndexs = search_candidate_stdAddress(
-        segmentedAddressTxts)
+        addressTxts)
     candidateStdAddress = map(lambda idxs: list(map(lambda i: ADDRESS_LIB[i], idxs)),
                               candidateStdAddressIndexs.values())
     candidateStdAddress = dict(zip(candidateStdAddressIndexs.keys(),
@@ -272,8 +262,10 @@ def match():
         if len(candidates) == 0:
             # TODO: 1. no candidates
             a += 1
+            print('{}.html'.format(index))
             pass
-        matchedStdAddress = standard_match(addressTxts[index], candidates)
+        street = addressTxts[index]['street']+addressTxts[index]['street_num']
+        matchedStdAddress = standard_match(street, candidates)
         if matchedStdAddress is None:
             # TODO: no match at street+street_num
             b += 1
@@ -292,17 +284,16 @@ def match():
         elif isinstance(matchedStdAddress, list):
             # TODO: more info for match.
             # print(index, addressTxts[index], matchedStdAddress)
-            print(index)
+            # print(index)
             c += 1
             pass
         elif isinstance(matchedStdAddress, dict):
             assert index not in finalStdAddress
             finalStdAddress[index] = matchedStdAddress
             d += 1
-            # print("{}.html,{}".format(index, '$'.join(matchedStdAddress.values())))
+            print("{}.html,{}".format(index, '$'.join(matchedStdAddress.values())))
         else:
             e += 1
-
     print(a, b, c, d, e, f)
 
 

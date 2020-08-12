@@ -59,10 +59,18 @@ def match_addition_field(fields, idAddressTxts, candidateStdAddress):
 
 
 def filter_nearby_streetNum(streetNumTxt, streetNums):
+    """
+        return:
+           list, matched item idx
+           list, upNeighbors
+           list, downNeighbors
+           list, upBounds
+           list, downBounds
+    """
     streetNumTxtValues = list(filter(len, re.split(r'[^\d]', streetNumTxt)))
     if not len(streetNumTxtValues):
         matchedIdxs, _ = filter_nearby_street_NonNum(streetNumTxt, streetNums)
-        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+        return matchedIdxs, [], [], [], []
 
     idxStreetNumValues = list(map(
         lambda sn: (sn[0], list(filter(len, re.split(r'[^\d]', sn[1])))),
@@ -73,7 +81,7 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
                                 idxStreetNumValuesTMP))
     if len(sameNumValues):
         matchedIdxs = list(map(lambda x: x[0], sameNumValues))
-        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+        return matchedIdxs, [], [], [], []
 
     assert len(idxStreetNumValuesTMP) > 1, '{} {}'.format(streetNumTxt, streetNums)
     streetNumFlag = int(streetNumTxtValues[0]) % 2
@@ -97,43 +105,49 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
         idxStreetNumValuesTMP = tmp
     if len(idxStreetNumValuesTMP) == 1:
         matchedIdxs = [idxStreetNumValuesTMP[0][0]]
-        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+        return matchedIdxs, [], [], [], []
 
     minLen = min(map(lambda x: len(x[1]), idxStreetNumValuesTMP))
     if minLen > len(streetNumTxtValues):
         idxStreetNumValuesTMP = sorted(idxStreetNumValuesTMP, key=lambda x: x[1][idx+1])
         matchedIdxs = [idxStreetNumValuesTMP[0][0]]
         # 3# --> 3#1 > 3#9
-        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
-
+        return matchedIdxs, [], [], [], []
+    # get neighbors with nearest street_num,like [22, 26] for 24.
     indicator = max(minLen-1, idx)
     tmp = 2 if indicator == 0 else 1
     neighborNums = [int(num)+tmp, int(num)-tmp]
-    neighbors, parents = set(), set()
+    upNeighbors, downNeighbors, parents = list(), list(), list()
     for idxTMP, numTMP in idxStreetNumValuesTMP:
         if len(numTMP) > indicator and int(numTMP[idx]) not in neighborNums:
             continue
         if len(numTMP) <= indicator:
-            parents.add(idxTMP)
+            parents.append(idxTMP)
             continue
-        neighbors.add(idxTMP)
-    if len(neighbors):
-        matchedIdxs = neighbors
+        beUpNeighbor = (neighborNums[0] == int(numTMP[idx]))
+        if beUpNeighbor:
+            upNeighbors.append(idxTMP)
+        else:
+            downNeighbors.append(idxTMP)
+    if len(upNeighbors) + len(downNeighbors) == 1:
+        matchedIdxs = upNeighbors + downNeighbors
+        return matchedIdxs, [], [], [], []
+    if upNeighbors and downNeighbors:
         # 3#3 --> 3#2 3#4
         # 1# --> 3# 5#
-        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+        return [], upNeighbors, downNeighbors, [], []
 
     idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]) > indicator,
                                         idxStreetNumValuesTMP))
     if not idxStreetNumValuesTMP:
         matchedIdxs = parents
         # 3#3 --> 3#
-        return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+        return matchedIdxs, [], [], [], []
     # 3#3 --> [3#] 3#5 3#1
     # 3#
+    upBounds, downBounds = list(), list()
     tmp = list(filter(lambda x: len(x[1]) <= indicator, idxStreetNumValuesTMP))
     matchedIdxs = list(map(lambda x: x[0], tmp))
-    downPoint, upPoint = None, None
     diffs = list(map(lambda x: (x[0], int(x[1][1][indicator]) - int(num)),
                      enumerate(idxStreetNumValuesTMP)))
     upDiffs = list(filter(lambda x: x[1] > 0, diffs))
@@ -143,14 +157,123 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
     for i, diff in diffs:
         if diff not in [upValue, downValue]:
             continue
-        matchedIdxs.append(idxStreetNumValuesTMP[i][0])
-    return matchedIdxs, list(map(lambda x: streetNums[x], matchedIdxs))
+        if not upNeighbors and diff == upValue:
+            upBounds.append(idxStreetNumValuesTMP[i][0])
+        if not downNeighbors and diff == downValue:
+            downBounds.append(idxStreetNumValuesTMP[i][0])
+    return [], upNeighbors, downNeighbors, upBounds, downBounds
 
 
 def post_calculate_nearby_street(stdAddresses):
 
+    numIndexs = get_same_street_item(stdAddresses[0])
+    # assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
+    otherNumIndexs = list(filter(lambda i: ADDRESS_LIB[i] not in stdAddresses,
+                                 numIndexs))
+    if len(otherNumIndexs) == 0:
+        return [stdAddresses[0]]
+
+    minDisCandts = []
+    for index, stdAddress in enumerate(stdAddresses):
+        X, Y = (float(stdAddress['locationx']), float(stdAddress['locationy']))
+        distances = map(
+            lambda i: ((float(ADDRESS_LIB[i]['locationx']) - X)*10**4) ** 2 +
+                      ((float(ADDRESS_LIB[i]['locationy']) - Y)*10**4) ** 2,
+            otherNumIndexs)
+        minDisCandts.append((stdAddresses[index], min(distances)))
+    matchedItem = sorted(minDisCandts, key=lambda x: x[1])[0][0]
+    return [matchedItem]
+
+
+def post_calculate_nearby_num(
+        upNeighbors, downNeighbors, upBounds, downBounds, candtsStdAddrs):
+
+    def unique_point(points, candts):
+        point = min(map(lambda x: (x, sum(map(lambda y: distance(candtsStdAddrs[x], candtsStdAddrs[y]),
+                                              candts))),
+                        points),
+                    key=lambda x: x[1])
+        return [point[0]]
+
+    downs = downNeighbors if downNeighbors else downBounds
+    ups = upNeighbors if upNeighbors else upBounds
+    # TODO: check more reasonable
+    if not downs:
+        upCandts = upNeighbors if upNeighbors else upBounds
+        index = sorted(upCandts, key=lambda x: candtsStdAddrs[x]['street_num'])[0]
+        return [candtsStdAddrs[index]]
+    if not ups:
+        downCandts = downNeighbors if downNeighbors else downBounds
+        index = sorted(downCandts, key=lambda x: candtsStdAddrs[x]['street_num'])[0]
+        return [candtsStdAddrs[index]]
+
+    if len(upNeighbors) > 1:
+        upNeighbors = unique_point(upNeighbors, downs)
+    if len(downNeighbors) > 1:
+        downNeighbors = unique_point(downNeighbors, ups)
+    if len(upBounds) > 1:
+        upBounds = unique_point(upBounds, downs)
+    if len(downBounds) > 1:
+        downBounds = unique_point(downBounds, ups)
+
+    if upNeighbors and not downNeighbors:
+        return [candtsStdAddrs[upNeighbors[0]]]
+    if downNeighbors and not upNeighbors:
+        return [candtsStdAddrs[downNeighbors[0]]]
+    if upNeighbors and downNeighbors:
+        matchedItems = choose_possible_address(
+            upNeighbors[0], downNeighbors[0], candtsStdAddrs)
+        return matchedItems
+    if upBounds and not downBounds:
+        return [candtsStdAddrs[upBounds[0]]]
+    if downBounds and not upBounds:
+        return [candtsStdAddrs[downBounds[0]]]
+    assert upBounds and downBounds
+    matchedItems = choose_possible_address(
+        upBounds[0], downBounds[0], candtsStdAddrs)
+    return matchedItems
+
+
+def choose_possible_address(point0, point1, candtsStdAddrs):
+    fieldRador = distance(candtsStdAddrs[point0], candtsStdAddrs[point1])
+    indexs = get_same_street_item(candtsStdAddrs[point0])
+    otherNumIndexs = list(filter(
+        lambda i: ADDRESS_LIB[i] not in [candtsStdAddrs[point0],
+                                         candtsStdAddrs[point1]],
+        indexs))
+    if len(otherNumIndexs) == 0:
+        # TODO: check default order.
+        # return [candtsStdAddrs[point0], candtsStdAddrs[point1]]
+        return [candtsStdAddrs[point0]]
+    point0Dis, point1Dis = [], []
+    for idx in otherNumIndexs:
+        dis = distance(ADDRESS_LIB[idx], candtsStdAddrs[point0])
+        if dis <= fieldRador:
+            point0Dis.append(dis)
+        dis = distance(ADDRESS_LIB[idx], candtsStdAddrs[point1])
+        if dis <= fieldRador:
+            point1Dis.append(dis)
+
+    if len(point0Dis) > len(point1Dis):
+        return [candtsStdAddrs[point0]]
+    if len(point1Dis) > len(point0Dis):
+        return [candtsStdAddrs[point1]]
+
+    minDisPoint0 = min(point0Dis, default=fieldRador)
+    minDisPoint1 = min(point1Dis, default=fieldRador)
+    if minDisPoint0 < minDisPoint1:
+        return [candtsStdAddrs[point0]]
+    if minDisPoint1 < minDisPoint0:
+        return [candtsStdAddrs[point1]]
+    assert minDisPoint0 == minDisPoint1
+    # TODO: check fitable degree.
+    # return [candtsStdAddrs[point0], candtsStdAddrs[point1]]
+    return [candtsStdAddrs[point0]]
+
+
+def get_same_street_item(item):
     feildNames = ['province', 'city', 'district', 'township', 'street']
-    filterFeildValues = list(map(lambda x: (x, stdAddresses[0][1][x]), feildNames))
+    filterFeildValues = list(map(lambda x: (x, item[x]), feildNames))
     numIndexs = set()
     for field, value in filterFeildValues:
         fieldSet = REVERSED_INDEX[field][value]
@@ -158,24 +281,16 @@ def post_calculate_nearby_street(stdAddresses):
             numIndexs = fieldSet
             continue
         numIndexs = numIndexs.intersection(fieldSet)
-    # assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
-    candtsAddress = list(map(lambda x: x[1], stdAddresses))
-    otherNumIndexs = list(filter(lambda i: ADDRESS_LIB[i] not in candtsAddress,
-                                 numIndexs))
-    if len(otherNumIndexs) == 0:
-        matchedIdx = stdAddresses[0][0]
-        return [matchedIdx], list(filter(lambda x: x[0] == matchedIdx, stdAddresses))
+    return numIndexs
 
-    minDisCandts = []
-    for index, stdAddress in stdAddresses:
-        X, Y = (float(stdAddress['locationx']), float(stdAddress['locationy']))
-        distances = map(
-            lambda i: ((float(ADDRESS_LIB[i]['locationx']) - X)*10**4) ** 2 +
-                      ((float(ADDRESS_LIB[i]['locationy']) - Y)*10**4) ** 2,
-            otherNumIndexs)
-        minDisCandts.append((index, min(distances)))
-    matchedIdx = sorted(minDisCandts, key=lambda x: x[1])[0][0]
-    return [matchedIdx], list(filter(lambda x: x[0] == matchedIdx, stdAddresses))
+
+def distance(item0, item1):
+    idx0X, idx0Y = (float(item0['locationx']),
+                    float(item0['locationy']))
+    idx1X, idx1Y = (float(item1['locationx']),
+                    float(item1['locationy']))
+    tmpDis = ((idx0X - idx1X)*10**4) ** 2 + ((idx0Y - idx1Y)*10**4) ** 2
+    return tmpDis
 
 
 def filter_nearby_street_NonNum(addressTxt, streetNonNums):
@@ -200,15 +315,25 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
     STREET_NUM_EXPR = r'[\d\-之附a-z#]+[号栋座店#]?[\d]*'
     streetNumTxt = addressTxt['street_num']
     notHasNum = re.search(STREET_NUM_EXPR, streetNumTxt) is None
+    matchedIdxs, upNeighbors, downNeighbors, upBounds, downBounds = (
+        [] for _ in range(5))
     if notHasNum:
         matchedIdxs, _ = filter_nearby_street_NonNum(streetNumTxt,
                                                      streetNumCandts)
     else:
-        matchedIdxs, _ = filter_nearby_streetNum(streetNumTxt, streetNumCandts)
+        tmps = filter_nearby_streetNum(streetNumTxt, streetNumCandts)
+        matchedIdxs, upNeighbors, downNeighbors, upBounds, downBounds = tmps
+
     if len(matchedIdxs) > 1:
-        matchedIdxs, _ = post_calculate_nearby_street(list(map(
-            lambda x: (x, candidateStdAddress[x]), matchedIdxs)))
-    return list(map(lambda x: candidateStdAddress[x], matchedIdxs))
+        matchedItems = post_calculate_nearby_street(list(map(
+            lambda x: candidateStdAddress[x], matchedIdxs)))
+    elif not matchedIdxs:
+        matchedItems = post_calculate_nearby_num(
+            upNeighbors, downNeighbors, upBounds, downBounds,
+            candidateStdAddress)
+    else:
+        matchedItems = [candidateStdAddress[matchedIdxs[0]]]
+    return matchedItems
 
 
 def search_candidate_stdAddress(addresses, fieldUnion=False):
@@ -269,12 +394,12 @@ def match():
         if matchedStdAddress is None:
             # TODO: no match at street+street_num
             b += 1
-            try:
-                matchedStdAddress = match_approximate_address(addressTxts[index],
-                                                              candidates)
-            except Exception as u:
-                print(index, u)
-                continue
+            # try:
+            matchedStdAddress = match_approximate_address(addressTxts[index],
+                                                            candidates)
+            # except Exception as u:
+            #     print(index, u)
+            #     continue
             if len(matchedStdAddress):
                 finalStdAddress[index] = matchedStdAddress
             for stdAddr in matchedStdAddress:

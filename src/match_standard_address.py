@@ -1,6 +1,7 @@
 # encoding=utf-8
 import re
 import json
+import math
 
 from util import load_standard_address, build_reversed_index, segment_address
 
@@ -164,7 +165,7 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
     return [], upNeighbors, downNeighbors, upBounds, downBounds
 
 
-def post_calculate_nearby_street(stdAddresses):
+def post_choose_possible_address(stdAddresses):
 
     numIndexs = get_same_street_item(stdAddresses[0])
     # assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
@@ -185,16 +186,18 @@ def post_calculate_nearby_street(stdAddresses):
     return [matchedItem]
 
 
-def post_calculate_nearby_num(
-        upNeighbors, downNeighbors, upBounds, downBounds, candtsStdAddrs):
+def post_calculate_nearby_address(
+        streetNumTxt, upNeighbors, downNeighbors, upBounds, downBounds,
+        candtsStdAddrs):
 
     def unique_point(points, candts):
-        point = min(map(lambda x: (x, sum(map(lambda y: distance(candtsStdAddrs[x], candtsStdAddrs[y]),
-                                              candts))),
-                        points),
-                    key=lambda x: x[1])
+        point = min(map(
+            lambda x: (x, sum(map(
+                lambda y: distance(candtsStdAddrs[x], candtsStdAddrs[y]),
+                candts))),
+            points),
+            key=lambda x: x[1])
         return [point[0]]
-
     downs = downNeighbors if downNeighbors else downBounds
     ups = upNeighbors if upNeighbors else upBounds
     # TODO: check more reasonable
@@ -221,54 +224,101 @@ def post_calculate_nearby_num(
     if downNeighbors and not upNeighbors:
         return [candtsStdAddrs[downNeighbors[0]]]
     if upNeighbors and downNeighbors:
-        matchedItems = choose_possible_address(
-            upNeighbors[0], downNeighbors[0], candtsStdAddrs)
+        radius = distance(candtsStdAddrs[upNeighbors[0]],
+                          candtsStdAddrs[downNeighbors[0]])
+        matchedItems = choose_address_with_neighbor(
+            radius, [upNeighbors[0], downNeighbors[0]], candtsStdAddrs)
         return matchedItems
     if upBounds and not downBounds:
         return [candtsStdAddrs[upBounds[0]]]
     if downBounds and not upBounds:
         return [candtsStdAddrs[downBounds[0]]]
     assert upBounds and downBounds
-    matchedItems = choose_possible_address(
-        upBounds[0], downBounds[0], candtsStdAddrs)
+    matchedItems = calculate_address_with_bound(
+        streetNumTxt, upBounds[0], downBounds[0], candtsStdAddrs)
     return matchedItems
 
 
-def choose_possible_address(point0, point1, candtsStdAddrs):
-    fieldRador = distance(candtsStdAddrs[point0], candtsStdAddrs[point1])
+def calculate_address_with_bound(numTxt, point0, point1,
+                                 candtsStdAddrs):
+    txts = [numTxt, candtsStdAddrs[point0]['street_num'],
+            candtsStdAddrs[point1]['street_num']]
+    v, v0, v1 = list(map(
+        lambda txt: list(map(float, filter(len, re.split(r'[^\d]', txt)))),
+        txts))
+    x0, y0 = (float(candtsStdAddrs[point0]['locationx']),
+              float(candtsStdAddrs[point0]['locationy']))
+    x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
+              float(candtsStdAddrs[point1]['locationy']))
+    x, y = linear_interpolation_location(v, v0, v1, [x0, y0], [x1, y1])
+
     indexs = get_same_street_item(candtsStdAddrs[point0])
+    targetLocation = {'locationx': x, 'locationy': y}
+    visualDis = list(map(lambda idx: (idx, distance(ADDRESS_LIB[idx],
+                                                    targetLocation)),
+                     indexs))
+    minDis = min(visualDis, key=lambda x: x[1])[1]
+    nearestPoints = list(map(lambda y: y[0],
+                         filter(lambda x: math.isclose(x[1], minDis),
+                                visualDis)))
+    if len(nearestPoints) == 1:
+        return [ADDRESS_LIB[nearestPoints[0]]]
+    radius = distance(candtsStdAddrs[point0],
+                      candtsStdAddrs[point1])
+    matchedItems = choose_address_with_neighbor(
+        radius, nearestPoints, ADDRESS_LIB)
+    return matchedItems
+
+
+def linear_interpolation_location(n, n0, n1, loc0, loc1):
+    indicator = 0
+    minLen = min(map(len, [n, n0, n1]))
+    while (minLen > indicator and (
+            n[indicator] == n0[indicator] == n1[indicator])):
+        indicator += 1
+    if minLen <= indicator:
+        indicator = minLen - 1
+    ratio = abs(n[indicator]-n0[indicator])/abs(n1[indicator]-n0[indicator])
+    x = loc0[0] + (loc1[0] - loc0[0]) * ratio
+    y = loc0[1] + (loc1[1] - loc0[1]) * ratio
+    return x, y
+
+
+def choose_address_with_neighbor(radius, points, candtsStdAddrs):
+    indexs = get_same_street_item(candtsStdAddrs[points[0]])
+    tmp = list(map(lambda x: candtsStdAddrs[x], points))
     otherNumIndexs = list(filter(
-        lambda i: ADDRESS_LIB[i] not in [candtsStdAddrs[point0],
-                                         candtsStdAddrs[point1]],
-        indexs))
+        lambda i: ADDRESS_LIB[i] not in tmp, indexs))
     if len(otherNumIndexs) == 0:
         # TODO: check default order.
         # return [candtsStdAddrs[point0], candtsStdAddrs[point1]]
-        return [candtsStdAddrs[point0]]
-    point0Dis, point1Dis = [], []
+        return [candtsStdAddrs[points[0]]]
+    pointsDis = [[] for _ in range(len(points))]
     for idx in otherNumIndexs:
-        dis = distance(ADDRESS_LIB[idx], candtsStdAddrs[point0])
-        if dis <= fieldRador:
-            point0Dis.append(dis)
-        dis = distance(ADDRESS_LIB[idx], candtsStdAddrs[point1])
-        if dis <= fieldRador:
-            point1Dis.append(dis)
+        for i, point in enumerate(points):
+            dis = distance(ADDRESS_LIB[idx], candtsStdAddrs[point])
+            if dis > radius:
+                continue
+            pointsDis[i].append(dis)
 
-    if len(point0Dis) > len(point1Dis):
-        return [candtsStdAddrs[point0]]
-    if len(point1Dis) > len(point0Dis):
-        return [candtsStdAddrs[point1]]
-
-    minDisPoint0 = min(point0Dis, default=fieldRador)
-    minDisPoint1 = min(point1Dis, default=fieldRador)
-    if minDisPoint0 < minDisPoint1:
-        return [candtsStdAddrs[point0]]
-    if minDisPoint1 < minDisPoint0:
-        return [candtsStdAddrs[point1]]
-    assert minDisPoint0 == minDisPoint1
+    maxNearbyNum = max(map(len, pointsDis))
+    idxPointsDis = list(filter(lambda x: len(x[1]) == maxNearbyNum,
+                               enumerate(pointsDis)))
+    if len(idxPointsDis) == 1:
+        matchedIdx = points[idxPointsDis[0][0]]
+        return [candtsStdAddrs[matchedIdx]]
+    minDisPoints = list(map(lambda x: (x[0], min(x[1], default=radius)),
+                            idxPointsDis))
+    minDisValue = min(minDisPoints, key=lambda x: x[1])[1]
+    minDisPoints = list(filter(lambda x: math.isclose(x[1], minDisValue),
+                               minDisPoints))
+    if len(minDisPoints) == 1:
+        matchedIdx = points[minDisPoints[0][0]]
+        return [candtsStdAddrs[matchedIdx]]
     # TODO: check fitable degree.
     # return [candtsStdAddrs[point0], candtsStdAddrs[point1]]
-    return [candtsStdAddrs[point0]]
+    matchedIdx = points[minDisPoints[0][0]]
+    return [candtsStdAddrs[matchedIdx]]
 
 
 def get_same_street_item(item):
@@ -325,11 +375,11 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
         matchedIdxs, upNeighbors, downNeighbors, upBounds, downBounds = tmps
 
     if len(matchedIdxs) > 1:
-        matchedItems = post_calculate_nearby_street(list(map(
+        matchedItems = post_choose_possible_address(list(map(
             lambda x: candidateStdAddress[x], matchedIdxs)))
     elif not matchedIdxs:
-        matchedItems = post_calculate_nearby_num(
-            upNeighbors, downNeighbors, upBounds, downBounds,
+        matchedItems = post_calculate_nearby_address(
+            streetNumTxt, upNeighbors, downNeighbors, upBounds, downBounds,
             candidateStdAddress)
     else:
         matchedItems = [candidateStdAddress[matchedIdxs[0]]]

@@ -226,7 +226,7 @@ def post_calculate_nearby_address(
     if upNeighbors and downNeighbors:
         radius = distance(candtsStdAddrs[upNeighbors[0]],
                           candtsStdAddrs[downNeighbors[0]])
-        matchedItems = choose_address_with_neighbor(
+        matchedItems = choose_address_with_location(
             radius, [upNeighbors[0], downNeighbors[0]], candtsStdAddrs)
         return matchedItems
     if upBounds and not downBounds:
@@ -265,7 +265,7 @@ def calculate_address_with_bound(numTxt, point0, point1,
         return [ADDRESS_LIB[nearestPoints[0]]]
     radius = distance(candtsStdAddrs[point0],
                       candtsStdAddrs[point1])
-    matchedItems = choose_address_with_neighbor(
+    matchedItems = choose_address_with_location(
         radius, nearestPoints, ADDRESS_LIB)
     return matchedItems
 
@@ -284,7 +284,7 @@ def linear_interpolation_location(n, n0, n1, loc0, loc1):
     return x, y
 
 
-def choose_address_with_neighbor(radius, points, candtsStdAddrs):
+def choose_address_with_location(radius, points, candtsStdAddrs):
     indexs = get_same_street_item(candtsStdAddrs[points[0]])
     tmp = list(map(lambda x: candtsStdAddrs[x], points))
     otherNumIndexs = list(filter(

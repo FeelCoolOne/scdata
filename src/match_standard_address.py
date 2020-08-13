@@ -252,15 +252,8 @@ def calculate_address_with_bound(numTxt, point0, point1,
               float(candtsStdAddrs[point1]['locationy']))
     x, y = linear_interpolation_location(v, v0, v1, [x0, y0], [x1, y1])
 
-    indexs = get_same_street_item(candtsStdAddrs[point0])
-    targetLocation = {'locationx': x, 'locationy': y}
-    visualDis = list(map(lambda idx: (idx, distance(ADDRESS_LIB[idx],
-                                                    targetLocation)),
-                     indexs))
-    minDis = min(visualDis, key=lambda x: x[1])[1]
-    nearestPoints = list(map(lambda y: y[0],
-                         filter(lambda x: math.isclose(x[1], minDis),
-                                visualDis)))
+    nearestPoints = search_nearest_address_location([x, y],
+                                                    candtsStdAddrs[point0])
     if len(nearestPoints) == 1:
         return [ADDRESS_LIB[nearestPoints[0]]]
     radius = distance(candtsStdAddrs[point0],
@@ -268,6 +261,19 @@ def calculate_address_with_bound(numTxt, point0, point1,
     matchedItems = choose_address_with_location(
         radius, nearestPoints, ADDRESS_LIB)
     return matchedItems
+
+
+def search_nearest_address_location(location, withInStreet):
+    indexs = get_same_street_item(withInStreet)
+    centerPoint = {'locationx': location[0], 'locationy': location[1]}
+    visualDis = list(map(lambda idx: (idx, distance(ADDRESS_LIB[idx],
+                                                    centerPoint)),
+                     indexs))
+    minDis = min(visualDis, key=lambda x: x[1])[1]
+    nearestPoints = list(map(lambda y: y[0],
+                         filter(lambda x: math.isclose(x[1], minDis),
+                                visualDis)))
+    return nearestPoints
 
 
 def linear_interpolation_location(n, n0, n1, loc0, loc1):

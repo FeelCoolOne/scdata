@@ -224,10 +224,8 @@ def post_calculate_nearby_address(
     if downNeighbors and not upNeighbors:
         return [candtsStdAddrs[downNeighbors[0]]]
     if upNeighbors and downNeighbors:
-        radius = distance(candtsStdAddrs[upNeighbors[0]],
-                          candtsStdAddrs[downNeighbors[0]])
-        matchedItems = choose_address_with_location(
-            radius, [upNeighbors[0], downNeighbors[0]], candtsStdAddrs)
+        matchedItems = calculate_address_with_neighbor(
+            upNeighbors[0], downNeighbors[0], candtsStdAddrs)
         return matchedItems
     if upBounds and not downBounds:
         return [candtsStdAddrs[upBounds[0]]]
@@ -236,6 +234,23 @@ def post_calculate_nearby_address(
     assert upBounds and downBounds
     matchedItems = calculate_address_with_bound(
         streetNumTxt, upBounds[0], downBounds[0], candtsStdAddrs)
+    return matchedItems
+
+
+def calculate_address_with_neighbor(point0, point1, candtsStdAddrs):
+    x0, y0 = (float(candtsStdAddrs[point0]['locationx']),
+              float(candtsStdAddrs[point0]['locationy']))
+    x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
+              float(candtsStdAddrs[point1]['locationy']))
+    x, y = (x0 + x1) / 2, (y0 + y1) / 2
+    nearestPoints = search_nearest_address_location([x, y],
+                                                    candtsStdAddrs[point0])
+    if len(nearestPoints) == 1:
+        return [ADDRESS_LIB[nearestPoints[0]]]
+    radius = distance(candtsStdAddrs[point0],
+                      candtsStdAddrs[point1])
+    matchedItems = choose_address_with_location(
+        radius, nearestPoints, ADDRESS_LIB)
     return matchedItems
 
 

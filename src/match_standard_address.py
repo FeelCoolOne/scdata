@@ -89,7 +89,7 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
     idxStreetNumValuesTMP = list(filter(
         lambda x: int(x[1][0]) % 2 == streetNumFlag,
         idxStreetNumValuesTMP))
-    if len(idxStreetNumValuesTMP) == 0:
+    if len(idxStreetNumValuesTMP) <= 3:
         # TODO: not same flag street_num.
         idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]), idxStreetNumValues))
     # 3#  --> 3#1 3#4

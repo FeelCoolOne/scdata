@@ -1,12 +1,14 @@
 # encoding=utf-8
-import jieba
+import re
 STANDARD_ADDRESS_LIB_PATH = 'data/位置信息识别-复赛数据/复赛标准地址库.csv'
 
 
-def load_standard_address():
+def load_standard_address(path=None):
+    if not path:
+        path = STANDARD_ADDRESS_LIB_PATH
     addresses = list()
     fieldSeparator, lineSeparator = '\t', '\n'
-    with open(STANDARD_ADDRESS_LIB_PATH, 'r', encoding='utf-8') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         fieldNames = f.readline().strip().split(fieldSeparator)
         for line in f:
             fieldValues = map(lambda x: x.strip(), line.split(fieldSeparator))
@@ -50,15 +52,22 @@ def build_user_dict(reverseIndex, path='./data/addressUserDict.txt'):
     return path
 
 
-def segment_address(addressTxts, reverseIndex=None):
-    if reverseIndex:
-        userDictPath = build_user_dict(reverseIndex)
-        jieba.set_dictionary(userDictPath)
-    addressSegs = list()
-    for addressTxt in addressTxts:
-        words = jieba.lcut(addressTxt, cut_all=False, HMM=0)
-        addressSegs.append(words)
-    return addressSegs
+def get_same_street_item(item, reversedIndex):
+    feildNames = ['province', 'city', 'district', 'township', 'street']
+    filterFeildValues = list(map(lambda x: (x, item[x]), feildNames))
+    numIndexs = set()
+    for field, value in filterFeildValues:
+        fieldSet = reversedIndex[field][value]
+        if not numIndexs:
+            numIndexs = fieldSet
+            continue
+        numIndexs = numIndexs.intersection(fieldSet)
+    return numIndexs
+
+
+def get_first_num(numTxt):
+    values = list(filter(len, re.split(r'[^\d]', numTxt)))
+    return int(values[0])
 
 
 if __name__ == "__main__":

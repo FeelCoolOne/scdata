@@ -3,8 +3,10 @@ import re
 import json
 import math
 
-from util import load_standard_address, build_reversed_index, segment_address
-
+from util import (load_standard_address, build_reversed_index,
+                  get_same_street_item, get_first_num)
+from calculation import (linear_interpolation_location, distance,
+                         segment_address)
 ADDRESS_LIB = None
 REVERSED_INDEX = None
 
@@ -63,7 +65,7 @@ def match_addition_field(fields, idAddressTxts, candidateStdAddress):
     return matchedStdAddress
 
 
-def filter_nearby_streetNum(streetNumTxt, streetNums):
+def filter_nearby_streetNum(streetNumTxt, streetNums, streetType):
     """Get neighbors and bound addresses with least difference in street num.
 
         `5#` has neighor `3#` and `7#`, `4-4` has neighbor `4-3` and `4-5`.
@@ -101,10 +103,11 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
         return matchedIdxs, [], [], [], []
 
     assert len(idxStreetNumValuesTMP) > 1, '{} {}'.format(streetNumTxt, streetNums)
-    streetNumFlag = int(streetNumTxtValues[0]) % 2
-    idxStreetNumValuesTMP = list(filter(
-        lambda x: int(x[1][0]) % 2 == streetNumFlag,
-        idxStreetNumValuesTMP))
+    if streetType == 2:
+        streetNumFlag = int(streetNumTxtValues[0]) % 2
+        idxStreetNumValuesTMP = list(filter(
+            lambda x: int(x[1][0]) % 2 == streetNumFlag,
+            idxStreetNumValuesTMP))
     if len(idxStreetNumValuesTMP) <= 3:
         # TODO: not same flag street_num.
         idxStreetNumValuesTMP = list(filter(lambda x: len(x[1]), idxStreetNumValues))
@@ -185,7 +188,7 @@ def post_choose_possible_address(stdAddresses):
     """choose address which has nearest location distance.
     """
 
-    numIndexs = get_same_street_item(stdAddresses[0])
+    numIndexs = get_same_street_item(stdAddresses[0], REVERSED_INDEX)
     # assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
     otherNumIndexs = list(filter(lambda i: ADDRESS_LIB[i] not in stdAddresses,
                                  numIndexs))
@@ -312,33 +315,22 @@ def calculate_address_with_bound(numTxt, point0, point1,
     return matchedItems
 
 
-def search_nearest_address_location(location, withInStreet):
+def search_nearest_address_location(location, withInStreet, includeZero=False):
     """Search nearest address by Pseudeo Euclidean Distance in location.
     """
-    indexs = get_same_street_item(withInStreet)
+    indexs = get_same_street_item(withInStreet, REVERSED_INDEX)
     centerPoint = {'locationx': location[0], 'locationy': location[1]}
     visualDis = list(map(lambda idx: (idx, distance(ADDRESS_LIB[idx],
                                                     centerPoint)),
                      indexs))
+    if not includeZero:
+        visualDis = list(filter(lambda pair: not math.isclose(pair[1], 0.),
+                                visualDis))
     minDis = min(visualDis, key=lambda x: x[1])[1]
     nearestPoints = list(map(lambda y: y[0],
                          filter(lambda x: math.isclose(x[1], minDis),
                                 visualDis)))
     return nearestPoints
-
-
-def linear_interpolation_location(n, n0, n1, loc0, loc1):
-    indicator = 0
-    minLen = min(map(len, [n, n0, n1]))
-    while (minLen > indicator and (
-            n[indicator] == n0[indicator] == n1[indicator])):
-        indicator += 1
-    if minLen <= indicator:
-        indicator = minLen - 1
-    ratio = abs(n[indicator]-n0[indicator])/abs(n1[indicator]-n0[indicator])
-    x = loc0[0] + (loc1[0] - loc0[0]) * ratio
-    y = loc0[1] + (loc1[1] - loc0[1]) * ratio
-    return x, y
 
 
 def choose_address_with_location(radius, points, candtsStdAddrs):
@@ -349,7 +341,7 @@ def choose_address_with_location(radius, points, candtsStdAddrs):
     address with less distance is higher than more location distances
     between one from `points` and other from same street.
     """
-    indexs = get_same_street_item(candtsStdAddrs[points[0]])
+    indexs = get_same_street_item(candtsStdAddrs[points[0]], REVERSED_INDEX)
     tmp = list(map(lambda x: candtsStdAddrs[x], points))
     otherNumIndexs = list(filter(
         lambda i: ADDRESS_LIB[i] not in tmp, indexs))
@@ -385,29 +377,6 @@ def choose_address_with_location(radius, points, candtsStdAddrs):
     return [candtsStdAddrs[matchedIdx]]
 
 
-def get_same_street_item(item):
-    feildNames = ['province', 'city', 'district', 'township', 'street']
-    filterFeildValues = list(map(lambda x: (x, item[x]), feildNames))
-    numIndexs = set()
-    for field, value in filterFeildValues:
-        fieldSet = REVERSED_INDEX[field][value]
-        if not numIndexs:
-            numIndexs = fieldSet
-            continue
-        numIndexs = numIndexs.intersection(fieldSet)
-    return numIndexs
-
-
-def distance(item0, item1):
-    """Pseudeo Euclidean Distance"""
-    idx0X, idx0Y = (float(item0['locationx']),
-                    float(item0['locationy']))
-    idx1X, idx1Y = (float(item1['locationx']),
-                    float(item1['locationy']))
-    tmpDis = ((idx0X - idx1X)*10**4) ** 2 + ((idx0Y - idx1Y)*10**4) ** 2
-    return tmpDis
-
-
 def filter_nearby_street_NonNum(addressTxt, streetNonNums):
     """Approximate match for NonNum address.
 
@@ -438,7 +407,7 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
         matchedItems:list
             matched nearby address.
     """
-    
+
     if topn >= len(candidateStdAddress):
         return candidateStdAddress
     streetNumCandts = list(map(lambda x: x['street_num'],
@@ -452,7 +421,8 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
         matchedIdxs, _ = filter_nearby_street_NonNum(streetNumTxt,
                                                      streetNumCandts)
     else:
-        tmps = filter_nearby_streetNum(streetNumTxt, streetNumCandts)
+        streetType = judge_street_type(candidateStdAddress)
+        tmps = filter_nearby_streetNum(streetNumTxt, streetNumCandts, streetType)
         matchedIdxs, upNeighbors, downNeighbors, upBounds, downBounds = tmps
 
     if len(matchedIdxs) > 1:
@@ -465,6 +435,31 @@ def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
     else:
         matchedItems = [candidateStdAddress[matchedIdxs[0]]]
     return matchedItems
+
+
+def judge_street_type(candidateStdAddress):
+    contNum, pairNum, sameNum, other = 0, 0, 0, 0
+    for address in candidateStdAddress:
+        try:
+            num = get_first_num(address['street_num'])
+            location = (address['locationx'], address['locationy'])
+            addressIdxs = search_nearest_address_location(location, address,
+                                                          False)
+            sNum = get_first_num(ADDRESS_LIB[addressIdxs[0]]['street_num'])
+        except Exception as _:
+            continue
+        diff = abs(num - sNum)
+        if diff == 1:
+            contNum += 1
+        elif diff == 2:
+            pairNum += 1
+        elif diff == 0:
+            sameNum += 1
+        else:
+            other += 1
+    # print('continue num: {}\tpairNum: {}\tsameNum: {}\tother: {}'.format(
+    #     contNum, pairNum, sameNum, other))
+    return 1 if contNum > pairNum else 2
 
 
 def search_candidate_stdAddress(addresses, fieldUnion=False):

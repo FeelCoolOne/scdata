@@ -10,6 +10,8 @@ REVERSED_INDEX = None
 
 
 def standard_match(addressTxt, candidateStdAddress):
+    """Absolute match with all fields.
+    """
 
     idSSCandts = map(lambda x: (x[0], x[1]['street']+x[1]['street_num']),
                      enumerate(candidateStdAddress))
@@ -38,6 +40,8 @@ def standard_match(addressTxt, candidateStdAddress):
 
 
 def match_addition_field(fields, idAddressTxts, candidateStdAddress):
+    """Match with other fields except `street_num`.
+    """
     matchedStdAddress = list(map(lambda x: candidateStdAddress[x[0]],
                                  idAddressTxts))
     for idx, field in enumerate(fields):
@@ -60,7 +64,19 @@ def match_addition_field(fields, idAddressTxts, candidateStdAddress):
 
 
 def filter_nearby_streetNum(streetNumTxt, streetNums):
-    """
+    """Get neighbors and bound addresses with least difference in street num.
+
+        `5#` has neighor `3#` and `7#`, `4-4` has neighbor `4-3` and `4-5`.
+        bound address which has least difference in street num between num
+        in `streetnumTxt` and num in candidates.
+
+        Params:
+            :streetNumTxt: string
+                input `street_num` info.
+            :streetNUms: list(string)
+                `street_num` from same-street candidate address in standard
+                address library.
+
         return:
            list, matched item idx
            list, upNeighbors
@@ -166,6 +182,8 @@ def filter_nearby_streetNum(streetNumTxt, streetNums):
 
 
 def post_choose_possible_address(stdAddresses):
+    """choose address which has nearest location distance.
+    """
 
     numIndexs = get_same_street_item(stdAddresses[0])
     # assert len(numIndexs) >= len(stdAddresses), '{}'.format(stdAddresses)
@@ -189,6 +207,13 @@ def post_choose_possible_address(stdAddresses):
 def post_calculate_nearby_address(
         streetNumTxt, upNeighbors, downNeighbors, upBounds, downBounds,
         candtsStdAddrs):
+    """Match address with neighbors or bounds.
+
+        When multiple up neighbors like `3#1, 3#3` for 1#, choose the one
+    which has nearest location distance from downs. multiple down neighbors,
+    multiple up or down bounds take same logic. if only one neighbor, get it.
+    After than if not has neighbor, choose with bounds.
+    """
 
     def unique_point(points, candts):
         point = min(map(
@@ -238,6 +263,13 @@ def post_calculate_nearby_address(
 
 
 def calculate_address_with_neighbor(point0, point1, candtsStdAddrs):
+    """Match address with neighbors.
+
+        When up&down neighbors exist, choose the same-street address
+    with nearest location distance between the middle point of neighbors
+    and same-street address. After that, if multiple candidates exist, choose
+    with `choose_addres_with_location`.
+    """
     x0, y0 = (float(candtsStdAddrs[point0]['locationx']),
               float(candtsStdAddrs[point0]['locationy']))
     x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
@@ -256,6 +288,8 @@ def calculate_address_with_neighbor(point0, point1, candtsStdAddrs):
 
 def calculate_address_with_bound(numTxt, point0, point1,
                                  candtsStdAddrs):
+    """Match address with bounds.
+    """
     txts = [numTxt, candtsStdAddrs[point0]['street_num'],
             candtsStdAddrs[point1]['street_num']]
     v, v0, v1 = list(map(
@@ -279,6 +313,8 @@ def calculate_address_with_bound(numTxt, point0, point1,
 
 
 def search_nearest_address_location(location, withInStreet):
+    """Search nearest address by Pseudeo Euclidean Distance in location.
+    """
     indexs = get_same_street_item(withInStreet)
     centerPoint = {'locationx': location[0], 'locationy': location[1]}
     visualDis = list(map(lambda idx: (idx, distance(ADDRESS_LIB[idx],
@@ -306,6 +342,13 @@ def linear_interpolation_location(n, n0, n1, loc0, loc1):
 
 
 def choose_address_with_location(radius, points, candtsStdAddrs):
+    """Choose address from `points`.
+
+       The priority of which has lots of nearby address is higher
+    than less one. After than, the priority of which has nearby
+    address with less distance is higher than more location distances
+    between one from `points` and other from same street.
+    """
     indexs = get_same_street_item(candtsStdAddrs[points[0]])
     tmp = list(map(lambda x: candtsStdAddrs[x], points))
     otherNumIndexs = list(filter(
@@ -356,6 +399,7 @@ def get_same_street_item(item):
 
 
 def distance(item0, item1):
+    """Pseudeo Euclidean Distance"""
     idx0X, idx0Y = (float(item0['locationx']),
                     float(item0['locationy']))
     idx1X, idx1Y = (float(item1['locationx']),
@@ -365,6 +409,11 @@ def distance(item0, item1):
 
 
 def filter_nearby_street_NonNum(addressTxt, streetNonNums):
+    """Approximate match for NonNum address.
+
+        When `street_num` has not digit num, match with size of common
+    characters.
+    """
     matchedIdx, minDistance = list(), 10**6
     for idx, streetTxt in enumerate(streetNonNums):
         dis = - len(set(streetTxt) & set(addressTxt))
@@ -379,6 +428,17 @@ def filter_nearby_street_NonNum(addressTxt, streetNonNums):
 
 
 def match_approximate_address(addressTxt, candidateStdAddress, topn=1):
+    """Approximate match.
+
+        When address info is not exactly matched in standard
+    address library, search nearby address with difference between
+    street nums and location distance.
+
+    :return:
+        matchedItems:list
+            matched nearby address.
+    """
+    
     if topn >= len(candidateStdAddress):
         return candidateStdAddress
     streetNumCandts = list(map(lambda x: x['street_num'],

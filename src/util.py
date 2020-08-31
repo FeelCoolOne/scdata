@@ -1,6 +1,6 @@
 # encoding=utf-8
 import jieba
-STANDARD_ADDRESS_LIB_PATH = 'data/位置信息识别-复赛数据/复赛标准地址库.csv'
+STANDARD_ADDRESS_LIB_PATH = 'data/位置信息-决赛数据/决赛标准地址库.csv'
 
 
 def load_standard_address():
@@ -27,10 +27,10 @@ def build_reversed_index(addresses):
             if address[field] not in reIndex[field]:
                 reIndex[field][address[field]] = set()
             reIndex[field][address[field]].add(index)
-            if field in ['province', 'city']:
-                if address[field][:-1] not in reIndex[field]:
-                    reIndex[field][address[field][:-1]] = set()
-                reIndex[field][address[field][:-1]].add(index)
+            # if field in ['province', 'city']:
+            #     if address[field][:-1] not in reIndex[field]:
+            #         reIndex[field][address[field][:-1]] = set()
+            #     reIndex[field][address[field][:-1]].add(index)
     return reIndex
 
 

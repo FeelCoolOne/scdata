@@ -1,21 +1,33 @@
 # encoding=utf-8
 import jieba
-STANDARD_ADDRESS_LIB_PATH = 'data/位置信息-决赛数据/决赛标准地址库.csv'
+import os
+import pickle
 
 
-def load_standard_address():
+def load_standard_address(path, rebuild=False, cache='data/sa.dat'):
+    if os.path.isfile(cache) and not rebuild:
+        with open(cache, 'rb') as f:
+            addresses = pickle.load(f)
+        return addresses
     addresses = list()
     fieldSeparator, lineSeparator = '\t', '\n'
-    with open(STANDARD_ADDRESS_LIB_PATH, 'r', encoding='utf-8') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         fieldNames = f.readline().strip().split(fieldSeparator)
         for line in f:
             fieldValues = map(lambda x: x.strip(), line.split(fieldSeparator))
             addressItem = dict(zip(fieldNames, fieldValues))
             addresses.append(addressItem)
+    with open(cache, 'wb') as f:
+        pickle.dump(addresses, f)
     return addresses
 
 
-def build_reversed_index(addresses):
+def build_reversed_index(addresses, rebuild=False, cache='data/ri.dat'):
+    if os.path.isfile(cache) and not rebuild:
+        with open(cache, 'rb') as f:
+            reIndex = pickle.load(f)
+        return reIndex
+
     fieldNames = ['province', 'city', 'district', 'township', 'street',
                   'street_num']
     reIndex = {fn: dict() for fn in fieldNames}
@@ -31,6 +43,8 @@ def build_reversed_index(addresses):
             #     if address[field][:-1] not in reIndex[field]:
             #         reIndex[field][address[field][:-1]] = set()
             #     reIndex[field][address[field][:-1]].add(index)
+    with open(cache, 'wb') as f:
+        pickle.dump(reIndex, f)
     return reIndex
 
 
@@ -62,7 +76,7 @@ def segment_address(addressTxts, reverseIndex=None):
 
 
 if __name__ == "__main__":
-    addresses = load_standard_address()
+    addresses = load_standard_address('data/位置信息-决赛数据/决赛标准地址库.csv')
     reversedIndex = build_reversed_index(addresses)
     testCases = ['王圣堂莲塘街13号', '人民大道63号', '你不知道我知道']
     words = segment_address(testCases, reversedIndex)

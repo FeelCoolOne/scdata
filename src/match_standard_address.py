@@ -3,10 +3,11 @@ import re
 import json
 import math
 
-from util import load_standard_address, build_reversed_index, segment_address
+from util import load_standard_address, build_reversed_index
 
 ADDRESS_LIB = None
 REVERSED_INDEX = None
+STANDARD_ADDRESS_LIB_PATH = 'data/位置信息-决赛数据/决赛标准地址库.csv'
 
 
 def standard_match(addressTxt, candidateStdAddress):
@@ -434,7 +435,7 @@ def match():
 
 def main():
     global ADDRESS_LIB, REVERSED_INDEX
-    ADDRESS_LIB = load_standard_address()
+    ADDRESS_LIB = load_standard_address(STANDARD_ADDRESS_LIB_PATH)
     REVERSED_INDEX = build_reversed_index(ADDRESS_LIB)
     match()
 

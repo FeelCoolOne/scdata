@@ -224,38 +224,34 @@ def post_calculate_nearby_address(
     if downNeighbors and not upNeighbors:
         return [candtsStdAddrs[downNeighbors[0]]]
     if upNeighbors and downNeighbors:
-        matchedItems = calculate_address_with_neighbor(
+        address = calculate_location_with_neighbor(
             upNeighbors[0], downNeighbors[0], candtsStdAddrs)
-        return matchedItems
+        address.update({'street': streetNumTxt})
+        candtsStdAddrs[0].update(address)
+        return [candtsStdAddrs[0]]
     if upBounds and not downBounds:
         return [candtsStdAddrs[upBounds[0]]]
     if downBounds and not upBounds:
         return [candtsStdAddrs[downBounds[0]]]
     assert upBounds and downBounds
-    matchedItems = calculate_address_with_bound(
+    address = calculate_location_with_bound(
         streetNumTxt, upBounds[0], downBounds[0], candtsStdAddrs)
-    return matchedItems
+    address.update({'street': streetNumTxt})
+    candtsStdAddrs[0].update(address)
+    return [candtsStdAddrs[0]]
 
 
-def calculate_address_with_neighbor(point0, point1, candtsStdAddrs):
+def calculate_location_with_neighbor(point0, point1, candtsStdAddrs):
     x0, y0 = (float(candtsStdAddrs[point0]['locationx']),
               float(candtsStdAddrs[point0]['locationy']))
     x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
               float(candtsStdAddrs[point1]['locationy']))
     x, y = (x0 + x1) / 2, (y0 + y1) / 2
-    nearestPoints = search_nearest_address_location([x, y],
-                                                    candtsStdAddrs[point0])
-    if len(nearestPoints) == 1:
-        return [ADDRESS_LIB[nearestPoints[0]]]
-    radius = distance(candtsStdAddrs[point0],
-                      candtsStdAddrs[point1])
-    matchedItems = choose_address_with_location(
-        radius, nearestPoints, ADDRESS_LIB)
-    return matchedItems
+    return {'locationx': str(x), 'locatoiny': str(y)}
 
 
-def calculate_address_with_bound(numTxt, point0, point1,
-                                 candtsStdAddrs):
+def calculate_location_with_bound(numTxt, point0, point1,
+                                  candtsStdAddrs):
     txts = [numTxt, candtsStdAddrs[point0]['street_num'],
             candtsStdAddrs[point1]['street_num']]
     v, v0, v1 = list(map(
@@ -266,29 +262,7 @@ def calculate_address_with_bound(numTxt, point0, point1,
     x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
               float(candtsStdAddrs[point1]['locationy']))
     x, y = linear_interpolation_location(v, v0, v1, [x0, y0], [x1, y1])
-
-    nearestPoints = search_nearest_address_location([x, y],
-                                                    candtsStdAddrs[point0])
-    if len(nearestPoints) == 1:
-        return [ADDRESS_LIB[nearestPoints[0]]]
-    radius = distance(candtsStdAddrs[point0],
-                      candtsStdAddrs[point1])
-    matchedItems = choose_address_with_location(
-        radius, nearestPoints, ADDRESS_LIB)
-    return matchedItems
-
-
-def search_nearest_address_location(location, withInStreet):
-    indexs = get_same_street_item(withInStreet)
-    centerPoint = {'locationx': location[0], 'locationy': location[1]}
-    visualDis = list(map(lambda idx: (idx, distance(ADDRESS_LIB[idx],
-                                                    centerPoint)),
-                     indexs))
-    minDis = min(visualDis, key=lambda x: x[1])[1]
-    nearestPoints = list(map(lambda y: y[0],
-                         filter(lambda x: math.isclose(x[1], minDis),
-                                visualDis)))
-    return nearestPoints
+    return {'locationx': str(x), 'locatoiny': str(y)}
 
 
 def linear_interpolation_location(n, n0, n1, loc0, loc1):
@@ -305,48 +279,13 @@ def linear_interpolation_location(n, n0, n1, loc0, loc1):
     return x, y
 
 
-def choose_address_with_location(radius, points, candtsStdAddrs):
-    indexs = get_same_street_item(candtsStdAddrs[points[0]])
-    tmp = list(map(lambda x: candtsStdAddrs[x], points))
-    otherNumIndexs = list(filter(
-        lambda i: ADDRESS_LIB[i] not in tmp, indexs))
-    if len(otherNumIndexs) == 0:
-        # TODO: check default order.
-        # return [candtsStdAddrs[point0], candtsStdAddrs[point1]]
-        return [candtsStdAddrs[points[0]]]
-    pointsDis = [[] for _ in range(len(points))]
-    for idx in otherNumIndexs:
-        for i, point in enumerate(points):
-            dis = distance(ADDRESS_LIB[idx], candtsStdAddrs[point])
-            if dis > radius:
-                continue
-            pointsDis[i].append(dis)
-
-    maxNearbyNum = max(map(len, pointsDis))
-    idxPointsDis = list(filter(lambda x: len(x[1]) == maxNearbyNum,
-                               enumerate(pointsDis)))
-    if len(idxPointsDis) == 1:
-        matchedIdx = points[idxPointsDis[0][0]]
-        return [candtsStdAddrs[matchedIdx]]
-    minDisPoints = list(map(lambda x: (x[0], min(x[1], default=radius)),
-                            idxPointsDis))
-    minDisValue = min(minDisPoints, key=lambda x: x[1])[1]
-    minDisPoints = list(filter(lambda x: math.isclose(x[1], minDisValue),
-                               minDisPoints))
-    if len(minDisPoints) == 1:
-        matchedIdx = points[minDisPoints[0][0]]
-        return [candtsStdAddrs[matchedIdx]]
-    # TODO: check fitable degree.
-    # return [candtsStdAddrs[point0], candtsStdAddrs[point1]]
-    matchedIdx = points[minDisPoints[0][0]]
-    return [candtsStdAddrs[matchedIdx]]
-
-
 def get_same_street_item(item):
     feildNames = ['province', 'city', 'district', 'township', 'street']
     filterFeildValues = list(map(lambda x: (x, item[x]), feildNames))
     numIndexs = set()
     for field, value in filterFeildValues:
+        if not value:
+            continue
         fieldSet = REVERSED_INDEX[field][value]
         if not numIndexs:
             numIndexs = fieldSet
@@ -433,7 +372,7 @@ def search_candidate_stdAddress(addresses, fieldUnion=False):
 
 
 def match():
-    extractedAddressPath = 'data/extracted_formated_address_0810.txt'
+    extractedAddressPath = 'data/extracted_formated_address_0830.txt'
     notSSNNum = 0
     addressTxts = dict()
     with open(extractedAddressPath, 'r', encoding='utf-8') as f:

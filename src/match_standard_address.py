@@ -362,18 +362,19 @@ def search_candidate_stdAddress(addresses, fieldUnion=False):
                 continue
             fieldCandidates = fieldRelatedIndex[fieldValue]
             if fieldUnion:
-                candidates = candidates.union(fieldCandidates)
+                candidatesTMP = candidates.union(fieldCandidates)
             else:
-                candidates = candidates.intersection(fieldCandidates) if len(
+                candidatesTMP = candidates.intersection(fieldCandidates) if len(
                     candidates) else fieldCandidates
-            if not candidates:
-                break
+            if not candidatesTMP:
+                continue
+            candidates = candidatesTMP
         candidateStdAdresses[index] = candidates
     return candidateStdAdresses
 
 
 def match():
-    extractedAddressPath = 'data/extracted_formated_address_0830.txt'
+    extractedAddressPath = 'data/extracted_formated_address_0907.txt'
     notSSNNum = 0
     addressTxts = dict()
     with open(extractedAddressPath, 'r', encoding='utf-8') as f:

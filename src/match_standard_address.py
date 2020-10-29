@@ -1,13 +1,18 @@
 # encoding=utf-8
+import time
+t_start = time.time()
+
 import re
 import json
 import math
 
 from util import load_standard_address, build_reversed_index
+from filter_address_noise import remove_address_noise
 
 ADDRESS_LIB = None
 REVERSED_INDEX = None
 STANDARD_ADDRESS_LIB_PATH = 'data/address_library_all.csv'
+DEBUG = True
 
 
 def standard_match(addressTxt, candidateStdAddress):
@@ -374,16 +379,11 @@ def search_candidate_stdAddress(addresses, fieldUnion=False):
 
 
 def match(extractedAddressPath, outputPath):
-    addressTxts = dict()
-    with open(extractedAddressPath, 'r', encoding='utf-8') as f:
-        for line in f:
-            index, addressTxt = line.rstrip().split('-->')
-            addressTxt = eval(addressTxt)
-            assert index not in addressTxts, '{}'.format(index)
-            if not addressTxt:
-                raise Exception('{} {}'.format(index, addressTxt))
-            addressTxts[index] = addressTxt
-
+    addressTxts = remove_address_noise(extractedAddressPath,
+                                       stdAddressLib=ADDRESS_LIB,
+                                       reversedIndex=REVERSED_INDEX,
+                                       debug=DEBUG)
+    print('search candidates ...')
     candidateStdAddressIndexs = search_candidate_stdAddress(
         addressTxts)
     candidateStdAddress = map(lambda idxs: list(map(lambda i: ADDRESS_LIB[i], idxs)),
@@ -394,6 +394,7 @@ def match(extractedAddressPath, outputPath):
     a, b, c, d, e, f = 0, 0, 0, 0, 0, 0
     outputFileHandler = open(outputPath, 'w', encoding='utf-8')
     outputFileHandler.write('filename,label\n')
+    print('start match ...')
     for index, candidates in candidateStdAddress.items():
         if len(candidates) == 0:
             # TODO: 1. no candidates
@@ -418,7 +419,8 @@ def match(extractedAddressPath, outputPath):
         elif isinstance(matchedStdAddress, list):
             # TODO: more info for match.
             # print(index, addressTxts[index], matchedStdAddress)
-            print(index)
+            print(index, 'more info need for match')
+            outputFileHandler.write("{}.html,need more info.\n".format(index))
             c += 1
         elif isinstance(matchedStdAddress, dict):
             assert index not in finalStdAddress
@@ -441,7 +443,7 @@ def match(extractedAddressPath, outputPath):
 def main():
     global ADDRESS_LIB, REVERSED_INDEX
     matchedAddressFilePath = 'data/result.csv'
-    extractedAddressPath = 'data/extracted_formated_address_1013.txt'
+    extractedAddressPath = 'data/auto_cut.txt'
     ADDRESS_LIB = load_standard_address(STANDARD_ADDRESS_LIB_PATH)
     REVERSED_INDEX = build_reversed_index(ADDRESS_LIB)
     match(extractedAddressPath, matchedAddressFilePath)
@@ -449,3 +451,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+    t_end = time.time()
+    print('time consume:', t_end - t_start)

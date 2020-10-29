@@ -22,7 +22,8 @@ def load_standard_address(path, rebuild=False, cache='data/sa.dat'):
     return addresses
 
 
-def build_reversed_index(addresses, rebuild=False, cache='data/ri.dat'):
+def build_reversed_index(addresses, rebuild=False, simplified=False,
+                         cache='data/ri.dat'):
     if os.path.isfile(cache) and not rebuild:
         with open(cache, 'rb') as f:
             reIndex = pickle.load(f)
@@ -39,10 +40,11 @@ def build_reversed_index(addresses, rebuild=False, cache='data/ri.dat'):
             if address[field] not in reIndex[field]:
                 reIndex[field][address[field]] = set()
             reIndex[field][address[field]].add(index)
-            # if field in ['province', 'city']:
-            #     if address[field][:-1] not in reIndex[field]:
-            #         reIndex[field][address[field][:-1]] = set()
-            #     reIndex[field][address[field][:-1]].add(index)
+            if field in ['province', 'city'] and simplified:
+                simplifiedValue = address[field][:-1]
+                if simplifiedValue not in reIndex[field]:
+                    reIndex[field][simplifiedValue] = set()
+                reIndex[field][simplifiedValue].add(index)
     with open(cache, 'wb') as f:
         pickle.dump(reIndex, f)
     return reIndex

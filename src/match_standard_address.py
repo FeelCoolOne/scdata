@@ -7,7 +7,7 @@ from util import load_standard_address, build_reversed_index
 
 ADDRESS_LIB = None
 REVERSED_INDEX = None
-STANDARD_ADDRESS_LIB_PATH = 'data/位置信息-决赛数据/决赛标准地址库.csv'
+STANDARD_ADDRESS_LIB_PATH = 'data/address_library_all.csv'
 
 
 def standard_match(addressTxt, candidateStdAddress):
@@ -227,7 +227,7 @@ def post_calculate_nearby_address(
     if upNeighbors and downNeighbors:
         address = calculate_location_with_neighbor(
             upNeighbors[0], downNeighbors[0], candtsStdAddrs)
-        address.update({'street': streetNumTxt})
+        address.update({'street_num': streetNumTxt})
         candtsStdAddrs[0].update(address)
         return [candtsStdAddrs[0]]
     if upBounds and not downBounds:
@@ -237,7 +237,7 @@ def post_calculate_nearby_address(
     assert upBounds and downBounds
     address = calculate_location_with_bound(
         streetNumTxt, upBounds[0], downBounds[0], candtsStdAddrs)
-    address.update({'street': streetNumTxt})
+    address.update({'street_num': streetNumTxt})
     candtsStdAddrs[0].update(address)
     return [candtsStdAddrs[0]]
 
@@ -248,7 +248,7 @@ def calculate_location_with_neighbor(point0, point1, candtsStdAddrs):
     x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
               float(candtsStdAddrs[point1]['locationy']))
     x, y = (x0 + x1) / 2, (y0 + y1) / 2
-    return {'locationx': str(x), 'locatoiny': str(y)}
+    return {'locationx': str(x), 'locationy': str(y)}
 
 
 def calculate_location_with_bound(numTxt, point0, point1,
@@ -263,7 +263,7 @@ def calculate_location_with_bound(numTxt, point0, point1,
     x1, y1 = (float(candtsStdAddrs[point1]['locationx']),
               float(candtsStdAddrs[point1]['locationy']))
     x, y = linear_interpolation_location(v, v0, v1, [x0, y0], [x1, y1])
-    return {'locationx': str(x), 'locatoiny': str(y)}
+    return {'locationx': str(x), 'locationy': str(y)}
 
 
 def linear_interpolation_location(n, n0, n1, loc0, loc1):
@@ -373,9 +373,7 @@ def search_candidate_stdAddress(addresses, fieldUnion=False):
     return candidateStdAdresses
 
 
-def match():
-    extractedAddressPath = 'data/extracted_formated_address_0907.txt'
-    notSSNNum = 0
+def match(extractedAddressPath, outputPath):
     addressTxts = dict()
     with open(extractedAddressPath, 'r', encoding='utf-8') as f:
         for line in f:
@@ -393,52 +391,60 @@ def match():
     candidateStdAddress = dict(zip(candidateStdAddressIndexs.keys(),
                                    candidateStdAddress))
     finalStdAddress = dict()
-    a, b, c, d, e = 0, 0, 0, 0, 0
-    f = 0
+    a, b, c, d, e, f = 0, 0, 0, 0, 0, 0
+    outputFileHandler = open(outputPath, 'w', encoding='utf-8')
+    outputFileHandler.write('filename,label\n')
     for index, candidates in candidateStdAddress.items():
         if len(candidates) == 0:
             # TODO: 1. no candidates
             a += 1
             print('{}.html'.format(index))
-            pass
         street = addressTxts[index]['street']+addressTxts[index]['street_num']
         matchedStdAddress = standard_match(street, candidates)
         if matchedStdAddress is None:
             # TODO: no match at street+street_num
             b += 1
-            # try:
             matchedStdAddress = match_approximate_address(addressTxts[index],
-                                                            candidates)
-            # except Exception as u:
-            #     print(index, u)
-            #     continue
+                                                          candidates)
             if len(matchedStdAddress):
                 finalStdAddress[index] = matchedStdAddress
+            assert len(matchedStdAddress) == 1, 'multiple match: {}'.format(
+                matchedStdAddress)
             for stdAddr in matchedStdAddress:
-                print("{}.html,{}".format(index, '$'.join(stdAddr.values())))
+                # print("{}.html,{}".format(index, '$'.join(stdAddr.values())))
+                outputFileHandler.write("{}.html,{}\n".format(
+                    index, '$'.join(stdAddr.values())))
                 f += 1
-            pass
         elif isinstance(matchedStdAddress, list):
             # TODO: more info for match.
             # print(index, addressTxts[index], matchedStdAddress)
-            # print(index)
+            print(index)
             c += 1
-            pass
         elif isinstance(matchedStdAddress, dict):
             assert index not in finalStdAddress
             finalStdAddress[index] = matchedStdAddress
+            # print("{}.html,{}".format(index, '$'.join(matchedStdAddress.values())))
+            outputFileHandler.write("{}.html,{}\n".format(index, '$'.join(
+                matchedStdAddress.values())))
             d += 1
-            print("{}.html,{}".format(index, '$'.join(matchedStdAddress.values())))
         else:
             e += 1
-    print(a, b, c, d, e, f)
+
+    print('no candidate in First: {}\n'
+          'Need approximate match: {}\n'
+          'Multiple exactly match: {}\n'
+          'Exactly match: {}\n'
+          'Other: {}\n'
+          'Approximate matched item: {}'.format(a, b, c, d, e, f))
 
 
 def main():
     global ADDRESS_LIB, REVERSED_INDEX
+    matchedAddressFilePath = 'data/result.csv'
+    extractedAddressPath = 'data/extracted_formated_address_1013.txt'
     ADDRESS_LIB = load_standard_address(STANDARD_ADDRESS_LIB_PATH)
     REVERSED_INDEX = build_reversed_index(ADDRESS_LIB)
-    match()
+    match(extractedAddressPath, matchedAddressFilePath)
 
 
 if __name__ == '__main__':
